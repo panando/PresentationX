@@ -2,9 +2,9 @@ import cv2
 import json
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
-                            QInputDialog, QSlider, QMenu)
+                            QInputDialog, QSlider, QMenu, QSplitter, QMessageBox)
 from PyQt6.QtGui import QShortcut
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime
 from PyQt6.QtGui import QImage, QPixmap, QKeySequence
 
 class VideoPlayerWindow(QMainWindow):
@@ -24,6 +24,10 @@ class VideoPlayerWindow(QMainWindow):
         self.seek_timer.setSingleShot(True)
         self.seek_timer.timeout.connect(self.delayed_seek)
         self.current_frame_cache = None
+        
+        # 添加快捷键计时器
+        self.last_prev_key_time = 0
+        self.prev_key_interval = 500  # 500ms间隔
         
         self.setup_ui()
         self.setup_timer()
@@ -64,9 +68,27 @@ class VideoPlayerWindow(QMainWindow):
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(self.video_label)
         
+        # 视频显示区
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(self.video_label, stretch=8)  # 视频区域占主要空间
+        
         # 时间轴
         timeline_container = QWidget()
         timeline_layout = QVBoxLayout(timeline_container)
+        timeline_layout.setContentsMargins(10, 2, 10, 2)  # 进一步减少内边距
+        timeline_layout.setSpacing(2)  # 进一步减少间距
+        
+        # 时间轴和进度显示
+        time_display = QHBoxLayout()
+        time_display.setSpacing(5)
+        
+        # 当前时间
+        self.current_time_label = QLabel("00:00:00")
+        self.current_time_label.setStyleSheet("font-size: 11px; color: #666;")
+        time_display.addWidget(self.current_time_label)
+        
+        # 时间轴
         self.timeline = QSlider(Qt.Orientation.Horizontal)
         self.timeline.sliderPressed.connect(self.on_timeline_pressed)
         self.timeline.sliderReleased.connect(self.on_timeline_released)
@@ -74,19 +96,35 @@ class VideoPlayerWindow(QMainWindow):
         self.timeline.setStyleSheet("""
             QSlider::handle:horizontal {
                 background: #2196F3;
-                width: 18px;
-                margin: -5px 0;
-                border-radius: 9px;
+                width: 14px;
+                margin: -3px 0;
+                border-radius: 7px;
             }
             QSlider::groove:horizontal {
-                height: 10px;
+                height: 6px;
                 background: #E0E0E0;
                 margin: 0px;
-                border-radius: 5px;
+                border-radius: 3px;
+            }
+            QSlider {
+                margin: 2px 8px;
             }
         """)
-        timeline_layout.addWidget(self.timeline)
-        left_layout.addWidget(timeline_container)
+        time_display.addWidget(self.timeline, stretch=1)
+        
+        # 总时间
+        self.total_time_label = QLabel("00:00:00")
+        self.total_time_label.setStyleSheet("font-size: 11px; color: #666;")
+        time_display.addWidget(self.total_time_label)
+        
+        timeline_layout.addLayout(time_display)
+        
+        # 标记容器
+        self.marks_container = QWidget()
+        self.marks_container.setStyleSheet("background: transparent;")
+        timeline_layout.addWidget(self.marks_container)
+        
+        left_layout.addWidget(timeline_container, stretch=1)  # 时间轴区域占较小空间
         
         # 控制按钮
         controls = QHBoxLayout()
@@ -118,10 +156,24 @@ class VideoPlayerWindow(QMainWindow):
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         
+        # 添加可调整大小的分割器
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # 标记列表
         self.mark_list = QListWidget()
         self.mark_list.itemDoubleClicked.connect(self.edit_mark)
-        right_layout.addWidget(QLabel("标记列表"))
-        right_layout.addWidget(self.mark_list)
+        
+        # 创建容器并添加控件
+        list_container = QWidget()
+        list_layout = QVBoxLayout(list_container)
+        list_layout.addWidget(QLabel("标记列表"))
+        list_layout.addWidget(self.mark_list)
+        
+        # 添加可调整大小的分割器
+        self.splitter.addWidget(list_container)
+        self.splitter.setStretchFactor(0, 1)
+        
+        right_layout.addWidget(self.splitter)
         
         # 添加到主布局
         layout.addWidget(left_widget, stretch=7)
@@ -130,6 +182,35 @@ class VideoPlayerWindow(QMainWindow):
         # 添加快捷键
         self.shortcut_fullscreen = QShortcut(QKeySequence("F11"), self)
         self.shortcut_fullscreen.activated.connect(self.toggle_fullscreen)
+        
+        # 回车键全屏
+        self.shortcut_enter = QShortcut(Qt.Key.Key_Return, self)
+        self.shortcut_enter.activated.connect(self.toggle_fullscreen)
+        
+        # 空格键播放/暂停
+        self.shortcut_space = QShortcut(Qt.Key.Key_Space, self)
+        self.shortcut_space.activated.connect(self.toggle_play)
+        
+        # m键添加标记
+        self.shortcut_mark = QShortcut(Qt.Key.Key_M, self)
+        self.shortcut_mark.activated.connect(self.add_mark)
+        
+        # delete和backspace键删除标记
+        self.shortcut_delete = QShortcut(Qt.Key.Key_Delete, self)
+        self.shortcut_delete.activated.connect(self.delete_selected_mark)
+        self.shortcut_backspace = QShortcut(Qt.Key.Key_Backspace, self)
+        self.shortcut_backspace.activated.connect(self.delete_selected_mark)
+        
+        # 添加上下左右键快捷键
+        self.shortcut_next = QShortcut(Qt.Key.Key_Right, self)
+        self.shortcut_next.activated.connect(self.jump_to_next_mark)
+        self.shortcut_next = QShortcut(Qt.Key.Key_Down, self)
+        self.shortcut_next.activated.connect(self.jump_to_next_mark)
+        
+        self.shortcut_prev = QShortcut(Qt.Key.Key_Left, self)
+        self.shortcut_prev.activated.connect(self.jump_to_prev_mark_with_interval)
+        self.shortcut_prev = QShortcut(Qt.Key.Key_Up, self)
+        self.shortcut_prev.activated.connect(self.jump_to_prev_mark_with_interval)
         
     def setup_timer(self):
         self.timer = QTimer()
@@ -156,6 +237,80 @@ class VideoPlayerWindow(QMainWindow):
                 self.draw_timeline_marks()
         except Exception as e:
             print(f"加载视频出错: {str(e)}")
+            
+    def jump_to_next_mark(self):
+        if self.cap is None or not self.marks:
+            return
+            
+        current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        
+        # 检查当前是否处于标记位置
+        is_at_mark = any(abs(mark['frame'] - current_frame) < 1 for mark in self.marks)
+        
+        if is_at_mark:
+            # 如果处于标记位置，直接播放
+            self.is_playing = True
+            self.play_btn.setText("暂停")
+            self.timer.start()
+        else:
+            # 否则跳转到下一个标记
+            next_mark = None
+            for mark in self.marks:
+                if mark['frame'] > current_frame:
+                    next_mark = mark
+                    break
+                    
+            if next_mark:
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, next_mark['frame'])
+                self.is_playing = True
+                self.play_btn.setText("暂停")
+                self.timer.start()
+                self.update_frame()
+            
+    def jump_to_prev_mark(self):
+        if self.cap is None or not self.marks:
+            return
+            
+        current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        prev_marks = [mark for mark in reversed(self.marks) if mark['frame'] < current_frame]
+        
+        if len(prev_marks) > 1:
+            # 跳转到上上个标记
+            prev_mark = prev_marks[1]
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
+            self.is_playing = True
+            self.play_btn.setText("暂停")
+            self.timer.start()
+            self.update_frame()
+        elif len(prev_marks) == 1:
+            # 只有一个标记时跳转到它
+            prev_mark = prev_marks[0]
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
+            self.is_playing = True
+            self.play_btn.setText("暂停")
+            self.timer.start()
+            self.update_frame()
+
+    def jump_to_prev_mark_with_interval(self):
+        """500ms内连续按下快捷键跳转到上上个标记"""
+        current_time = QDateTime.currentMSecsSinceEpoch()
+        if current_time - self.last_prev_key_time < self.prev_key_interval:
+            # 如果两次按键间隔小于500ms，跳转到上上个标记
+            self.jump_to_prev_mark()
+        else:
+            # 否则跳转到上一个标记
+            current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            prev_marks = [mark for mark in reversed(self.marks) if mark['frame'] < current_frame]
+            if prev_marks:
+                prev_mark = prev_marks[0]
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
+                self.is_playing = True
+                self.play_btn.setText("暂停")
+                self.timer.start()
+                self.update_frame()
+        
+        # 更新最后按键时间
+        self.last_prev_key_time = current_time
             
     def toggle_play(self):
         if self.cap is None:
@@ -234,17 +389,30 @@ class VideoPlayerWindow(QMainWindow):
         self.update_mark_list()
         self.draw_timeline_marks()
             
-    def frame_to_time(self, frame):
+    def frame_to_time(self, frame, total_frames=None):
         if self.cap is None:
             return "00:00:00"
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0:
             return "00:00:00"
+            
+        # 计算当前时间
         total_seconds = int(frame / fps)
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
-        return f"{hours:02}:{minutes:02}:{seconds:02}"
+        current_time = f"{hours:02}:{minutes:02}:{seconds:02}"
+        
+        # 如果需要计算总时长
+        if total_frames is not None:
+            total_seconds = int(total_frames / fps)
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            total_time = f"{hours:02}:{minutes:02}:{seconds:02}"
+            return f"{current_time} / {total_time}"
+            
+        return current_time
 
     def update_mark_list(self):
         self.mark_list.clear()
@@ -328,52 +496,95 @@ class VideoPlayerWindow(QMainWindow):
             print(f"显示帧出错: {str(e)}")
             
     def resizeEvent(self, event):
-        """窗口大小改变时重新调整视频显示"""
+        """窗口大小改变时重新调整视频显示和标记容器位置"""
         super().resizeEvent(event)
         if self.current_frame_cache is not None:
             self.display_frame(self.current_frame_cache)
+        # 窗口大小改变时重新绘制标记
+        self.draw_timeline_marks()
 
     def draw_timeline_marks(self):
+        # 基础样式
         base_style = """
-            QSlider::handle:horizontal {
-                background: #2196F3;
-                width: 18px;
-                margin: -5px 0;
-                border-radius: 9px;
+            QSlider {
+                min-height: 20px;
             }
             QSlider::groove:horizontal {
-                height: 10px;
                 background: #E0E0E0;
-                margin: 0px;
-                border-radius: 5px;
+                height: 6px;
+                border-radius: 3px;
+                margin: 5px 0;
             }
             QSlider::sub-page:horizontal {
                 background: #2196F3;
+                height: 6px;
+                border-radius: 3px;
             }
-            QSlider::add-page:horizontal {
-                background: #E0E0E0;
+            QSlider::handle:horizontal {
+                background: #2196F3;
+                width: 14px;
+                height: 14px;
+                margin: -3px 0;
+                border-radius: 7px;
             }
         """
         
-        # 添加标记指示器样式
-        mark_indicators = ""
+        # 添加标记样式
+        mark_style = ""
         if self.timeline.maximum() > 0:
             for mark in self.marks:
                 position = mark['frame'] / self.timeline.maximum()
-                mark_indicators += f"""
-                    QSlider::handle:horizontal {{
-                        background: #E0E0E0;
+                mark_style += f"""
+                    QSlider::groove:horizontal {{
+                        border-left: {position * 100}% solid transparent;
+                        border-right: {(1 - position) * 100}% solid transparent;
                     }}
-                    QSlider::sub-page:horizontal {{
-                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                            stop:{max(0, position-0.01)} #E0E0E0,
-                            stop:{position} #FF4081,
-                            stop:{min(1, position+0.01)} #E0E0E0);
+                    QSlider::add-page:horizontal {{
+                        border-left: 2px solid #FF4081;
+                        margin-left: -2px;
                     }}
                 """
         
-        complete_style = base_style + mark_indicators
-        self.timeline.setStyleSheet(complete_style)
+        self.timeline.setStyleSheet(base_style + mark_style)
+        
+        # 清除旧标记
+        if hasattr(self, 'mark_labels'):
+            for label in self.mark_labels:
+                label.deleteLater()
+        self.mark_labels = []
+        
+        # 在时间轴下方添加标记
+        for mark in self.marks:
+            # 获取时间轴相对位置和宽度
+            timeline_pos = self.timeline.pos()
+            timeline_width = self.timeline.width()
+            time_label_width = self.current_time_label.width()
+            
+            # 计算标记容器相对位置和宽度
+            timeline_margin = 10  # 与进度条相同的边距
+            marks_container_width = timeline_width - time_label_width - timeline_margin * 2
+            marks_container_x = timeline_pos.x() + time_label_width + timeline_margin
+            
+            # 设置标记容器位置和大小
+            self.marks_container.setGeometry(
+                marks_container_x,  # x位置右移一个时间显示模块宽度并加上边距
+                timeline_pos.y() + self.timeline.height(),  # y位置在进度条下方
+                marks_container_width,  # 宽度减去时间显示模块宽度和边距
+                20  # 固定高度
+            )
+            
+            # 计算标记位置（基于标记容器宽度）
+            position = (mark['frame'] / self.timeline.maximum()) * marks_container_width
+            
+            # 创建标记
+            label = QLabel("▼", self.marks_container)
+            label.setStyleSheet("color: #FF4081; font-size: 10px;")
+            label.move(
+                int(position - 6),  # 调整标记位置使其与滑块对齐
+                5  # 紧贴时间轴下方
+            )
+            label.show()
+            self.mark_labels.append(label)
 
     def setup_mark_list_context_menu(self):
         self.mark_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -395,9 +606,30 @@ class VideoPlayerWindow(QMainWindow):
 
     def delete_mark(self, index):
         if 0 <= index < len(self.marks):
-            self.marks.pop(index)
-            self.update_mark_list()
-            self.draw_timeline_marks()
+            # 获取要删除的标记信息
+            mark = self.marks[index]
+            time_str = self.frame_to_time(mark['frame'])
+            note = mark['note'] if mark['note'] else "无注释"
+            
+            # 弹出确认对话框
+            confirm = QMessageBox.question(
+                self,
+                "确认删除",
+                f"确定要删除标记吗？\n时间: {time_str}\n注释: {note}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if confirm == QMessageBox.StandardButton.Yes:
+                self.marks.pop(index)
+                self.update_mark_list()
+                self.draw_timeline_marks()
+
+    def delete_selected_mark(self):
+        """删除当前选中的标记"""
+        current_item = self.mark_list.currentItem()
+        if current_item:
+            index = self.mark_list.row(current_item)
+            self.delete_mark(index)
 
     def toggle_maximized(self):
         if self.isMaximized():
@@ -453,10 +685,30 @@ class VideoPlayerWindow(QMainWindow):
         self.fullscreen_window.showFullScreen()
         self.fullscreen_btn.setText("退出全屏")
         
+        # 重新设置全屏窗口的快捷键
+        self.setup_fullscreen_shortcuts()
+        
         # 连接事件
         self.fullscreen_window.keyPressEvent = lambda event: self.exit_fullscreen(event)
         self.fullscreen_window.mouseDoubleClickEvent = lambda event: self.exit_fullscreen(event)
         self.fullscreen_window.resizeEvent = lambda event: self.update_fullscreen_frame()
+
+    def setup_fullscreen_shortcuts(self):
+        """设置全屏窗口的快捷键"""
+        # 空格键播放/暂停
+        QShortcut(Qt.Key.Key_Space, self.fullscreen_window).activated.connect(self.toggle_play)
+        
+        # m键添加标记
+        QShortcut(Qt.Key.Key_M, self.fullscreen_window).activated.connect(self.add_mark)
+        
+        # delete键删除标记
+        QShortcut(Qt.Key.Key_Delete, self.fullscreen_window).activated.connect(self.delete_selected_mark)
+        
+        # 添加上下左右键快捷键
+        QShortcut(Qt.Key.Key_Right, self.fullscreen_window).activated.connect(self.jump_to_next_mark)
+        QShortcut(Qt.Key.Key_Down, self.fullscreen_window).activated.connect(self.jump_to_next_mark)
+        QShortcut(Qt.Key.Key_Left, self.fullscreen_window).activated.connect(self.jump_to_prev_mark_with_interval)
+        QShortcut(Qt.Key.Key_Up, self.fullscreen_window).activated.connect(self.jump_to_prev_mark_with_interval)
         
     def update_fullscreen_frame(self):
         """更新全屏窗口的视频帧"""
