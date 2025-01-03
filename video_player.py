@@ -3,8 +3,9 @@ import json
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
                             QInputDialog, QSlider, QMenu)
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtGui import QShortcut
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent
+from PyQt6.QtGui import QImage, QPixmap, QKeySequence
 
 class VideoPlayerWindow(QMainWindow):
     def __init__(self):
@@ -125,6 +126,10 @@ class VideoPlayerWindow(QMainWindow):
         # 添加到主布局
         layout.addWidget(left_widget, stretch=7)
         layout.addWidget(right_widget, stretch=3)
+        
+        # 添加快捷键
+        self.shortcut_fullscreen = QShortcut(QKeySequence("F11"), self)
+        self.shortcut_fullscreen.activated.connect(self.toggle_fullscreen)
         
     def setup_timer(self):
         self.timer = QTimer()
@@ -298,12 +303,19 @@ class VideoPlayerWindow(QMainWindow):
             bytes_per_line = ch * w
             
             img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-            scaled_pixmap = QPixmap.fromImage(img).scaled(
+            
+            # 更新主窗口视频
+            main_pixmap = QPixmap.fromImage(img).scaled(
                 self.video_label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation  # 使用高质量缩放
+                Qt.TransformationMode.SmoothTransformation
             )
-            self.video_label.setPixmap(scaled_pixmap)
+            self.video_label.setPixmap(main_pixmap)
+            
+            # 如果全屏窗口存在，更新全屏窗口视频
+            if hasattr(self, 'fullscreen_window'):
+                self.update_fullscreen_frame()
+                
         except Exception as e:
             print(f"显示帧出错: {str(e)}")
             
@@ -405,12 +417,61 @@ class VideoPlayerWindow(QMainWindow):
             self.update_frame()
 
     def toggle_fullscreen(self):
-        if self.isFullScreen():
+        if hasattr(self, 'fullscreen_window'):
+            # 如果已经全屏，则退出全屏
+            self.fullscreen_window.close()
+            del self.fullscreen_window
+            self.fullscreen_btn.setText("全屏")
+            return
+            
+        # 创建全屏窗口
+        self.fullscreen_window = QWidget()
+        self.fullscreen_window.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.fullscreen_window.setStyleSheet("background-color: black;")
+        
+        # 创建布局并添加视频标签
+        layout = QVBoxLayout(self.fullscreen_window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.fullscreen_label = QLabel()
+        self.fullscreen_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # 设置初始视频帧
+        if self.video_label.pixmap():
+            self.update_fullscreen_frame()
+        
+        layout.addWidget(self.fullscreen_label)
+        
+        # 设置全屏
+        self.fullscreen_window.showFullScreen()
+        self.fullscreen_btn.setText("退出全屏")
+        
+        # 连接事件
+        self.fullscreen_window.keyPressEvent = lambda event: self.exit_fullscreen(event)
+        self.fullscreen_window.mouseDoubleClickEvent = lambda event: self.exit_fullscreen(event)
+        self.fullscreen_window.resizeEvent = lambda event: self.update_fullscreen_frame()
+        
+    def update_fullscreen_frame(self):
+        """更新全屏窗口的视频帧"""
+        if hasattr(self, 'fullscreen_label') and self.video_label.pixmap():
+            self.fullscreen_label.setPixmap(self.video_label.pixmap().scaled(
+                self.fullscreen_window.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
+        
+    def exit_fullscreen(self, event):
+        # 处理键盘事件
+        if hasattr(event, 'key') and event.key() == Qt.Key.Key_Escape:
+            self.toggle_fullscreen()
+        # 处理鼠标双击事件
+        elif isinstance(event, type(event)) and event.type() == QEvent.Type.MouseButtonDblClick:
+            self.toggle_fullscreen()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
             self.fullscreen_btn.setText("全屏")
-        else:
-            self.showFullScreen()
-            self.fullscreen_btn.setText("退出全屏")
+        super().keyPressEvent(event)
 
 if __name__ == "__main__":
     import sys
