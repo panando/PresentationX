@@ -247,6 +247,17 @@ class VideoPlayerWindow(QMainWindow):
         self.timer.setInterval(33)  # 约30fps
         self.seek_delay = 100  # 100ms的防抖动延迟
         
+    def delayed_seek(self):
+        """防抖动的延迟跳转"""
+        if self.cap is None:
+            return
+        target_frame = self.timeline.value()
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+        # 同步音频位置
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps > 0:
+            self.media_player.setPosition(int(target_frame / fps * 1000))
+        
     def set_volume(self, value):
         """设置音量"""
         self.audio_output.setVolume(value / 100.0)
@@ -414,6 +425,9 @@ class VideoPlayerWindow(QMainWindow):
                 self.timeline.setValue(int(current_frame))
                 self.timeline.blockSignals(False)
                 
+                # 更新时间显示
+                self.update_time_display()
+                
                 # 检查是否到达标记
                 for mark in self.marks:
                     if abs(mark['frame'] - current_frame) < 1:  # 允许一帧的误差
@@ -439,7 +453,7 @@ class VideoPlayerWindow(QMainWindow):
         self.update_mark_list()
         self.draw_timeline_marks()
             
-    def frame_to_time(self, frame, total_frames=None):
+    def frame_to_time(self, frame):
         if self.cap is None:
             return "00:00:00"
         fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -451,18 +465,22 @@ class VideoPlayerWindow(QMainWindow):
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
-        current_time = f"{hours:02}:{minutes:02}:{seconds:02}"
-        
-        # 如果需要计算总时长
-        if total_frames is not None:
-            total_seconds = int(total_frames / fps)
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-            total_time = f"{hours:02}:{minutes:02}:{seconds:02}"
-            return f"{current_time} / {total_time}"
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+    def update_time_display(self):
+        """更新当前时间和总时间显示"""
+        if self.cap is None:
+            return
             
-        return current_time
+        current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        total_frames = self.cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        
+        if fps > 0:
+            # 更新当前时间
+            self.current_time_label.setText(self.frame_to_time(current_frame))
+            # 更新总时间
+            self.total_time_label.setText(self.frame_to_time(total_frames))
 
     def update_mark_list(self):
         self.mark_list.clear()
