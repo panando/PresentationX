@@ -256,15 +256,23 @@ class VideoPlayerWindow(QMainWindow):
             self.mark_list.addItem(display_text)
             
     def edit_mark(self, item):
-        # 双击跳转到标记处
+        # 双击跳转到标记处并暂停
         index = self.mark_list.row(item)
         if 0 <= index < len(self.marks):
-            frame = self.marks[index]['frame']
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+            frame_num = int(self.marks[index]['frame'])
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
             self.is_playing = False
             self.play_btn.setText("播放")
             self.timer.stop()
-            self.delayed_seek()
+            # 立即显示目标帧
+            ret, frame = self.cap.read()
+            if ret:
+                self.current_frame_cache = frame
+                self.display_frame(frame)
+            # 更新时间轴位置
+            self.timeline.blockSignals(True)
+            self.timeline.setValue(frame_num)
+            self.timeline.blockSignals(False)
 
     def on_timeline_pressed(self):
         self.timer.stop()
