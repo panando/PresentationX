@@ -4,8 +4,9 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
                             QInputDialog, QSlider, QMenu, QSplitter, QMessageBox)
 from PyQt6.QtGui import QShortcut
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime, QUrl
 from PyQt6.QtGui import QImage, QPixmap, QKeySequence
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 class VideoPlayerWindow(QMainWindow):
     def __init__(self):
@@ -24,6 +25,12 @@ class VideoPlayerWindow(QMainWindow):
         self.seek_timer.setSingleShot(True)
         self.seek_timer.timeout.connect(self.delayed_seek)
         self.current_frame_cache = None
+        
+        # 初始化音频播放器
+        self.media_player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.media_player.setAudioOutput(self.audio_output)
+        self.audio_output.setVolume(0.5)  # 默认音量50%
         
         # 添加快捷键计时器
         self.last_prev_key_time = 0
@@ -116,6 +123,28 @@ class VideoPlayerWindow(QMainWindow):
         self.total_time_label = QLabel("00:00:00")
         self.total_time_label.setStyleSheet("font-size: 11px; color: #666;")
         time_display.addWidget(self.total_time_label)
+        
+        # 添加音量控制
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(50)
+        self.volume_slider.setFixedWidth(80)
+        self.volume_slider.setStyleSheet("""
+            QSlider::handle:horizontal {
+                background: #4CAF50;
+                width: 12px;
+                margin: -3px 0;
+                border-radius: 6px;
+            }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #E0E0E0;
+                margin: 0px;
+                border-radius: 3px;
+            }
+        """)
+        self.volume_slider.valueChanged.connect(self.set_volume)
+        time_display.addWidget(self.volume_slider)
         
         timeline_layout.addLayout(time_display)
         
@@ -218,12 +247,21 @@ class VideoPlayerWindow(QMainWindow):
         self.timer.setInterval(33)  # 约30fps
         self.seek_delay = 100  # 100ms的防抖动延迟
         
+    def set_volume(self, value):
+        """设置音量"""
+        self.audio_output.setVolume(value / 100.0)
+
     def load_video(self):
         try:
             file_name, _ = QFileDialog.getOpenFileName(self, "选择视频文件")
             if file_name:
                 self.video_path = file_name
                 self.cap = cv2.VideoCapture(file_name)
+                # 设置媒体播放器
+                self.media_player.setSource(QUrl.fromLocalFile(file_name))
+                self.media_player.play()
+                self.media_player.pause()  # 先暂停，等待用户点击播放
+                
                 total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.timeline.setMaximum(total_frames)
                 # 添加默认的开始和结束标记
@@ -252,6 +290,7 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
+            self.media_player.play()  # 播放音频
         else:
             # 否则跳转到下一个标记
             next_mark = None
@@ -265,6 +304,8 @@ class VideoPlayerWindow(QMainWindow):
                 self.is_playing = True
                 self.play_btn.setText("暂停")
                 self.timer.start()
+                self.media_player.setPosition(int(next_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+                self.media_player.play()  # 播放音频
                 self.update_frame()
             
     def jump_to_prev_mark(self):
@@ -281,6 +322,8 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
+            self.media_player.setPosition(int(prev_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+            self.media_player.play()  # 播放音频
             self.update_frame()
         elif len(prev_marks) == 1:
             # 只有一个标记时跳转到它
@@ -289,6 +332,8 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
+            self.media_player.setPosition(int(prev_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+            self.media_player.play()  # 播放音频
             self.update_frame()
 
     def jump_to_prev_mark_with_interval(self):
@@ -323,6 +368,7 @@ class VideoPlayerWindow(QMainWindow):
                 self.is_playing = True
                 self.play_btn.setText("暂停")
                 self.timer.start()
+                self.media_player.play()  # 播放音频
             else:
                 # 查找下一个标记
                 current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
@@ -337,16 +383,19 @@ class VideoPlayerWindow(QMainWindow):
                     self.is_playing = True
                     self.play_btn.setText("暂停")
                     self.timer.start()
+                    self.media_player.play()  # 播放音频
                 else:
                     # 没有下一个标记，回到第一个标记
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.marks[0]['frame'])
                     self.is_playing = True
                     self.play_btn.setText("暂停")
                     self.timer.start()
+                    self.media_player.play()  # 播放音频
         else:
             self.is_playing = False
             self.play_btn.setText("播放")
             self.timer.stop()
+            self.media_player.pause()  # 暂停音频
             # 暂停时显示当前帧
             if self.current_frame_cache is not None:
                 self.display_frame(self.current_frame_cache)
@@ -371,6 +420,7 @@ class VideoPlayerWindow(QMainWindow):
                         self.is_playing = False
                         self.play_btn.setText("播放")
                         self.timer.stop()
+                        self.media_player.pause()  # 暂停音频
                         break
         except Exception as e:
             print(f"更新帧出错: {str(e)}")
@@ -462,6 +512,7 @@ class VideoPlayerWindow(QMainWindow):
                 return
             value = self.timeline.value()
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, value)
+            self.media_player.setPosition(int(value / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
             ret, frame = self.cap.read()
             if ret:
                 self.current_frame_cache = frame
@@ -653,6 +704,7 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = False
             self.play_btn.setText("播放")
             self.timer.stop()
+            self.media_player.stop()  # 停止音频
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             self.update_frame()
 
