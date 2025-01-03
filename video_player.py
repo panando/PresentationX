@@ -100,21 +100,24 @@ class VideoPlayerWindow(QMainWindow):
         self.timeline.sliderPressed.connect(self.on_timeline_pressed)
         self.timeline.sliderReleased.connect(self.on_timeline_released)
         self.timeline.sliderMoved.connect(self.on_timeline_change)
+        # 基础样式
         self.timeline.setStyleSheet("""
-            QSlider::handle:horizontal {
-                background: #2196F3;
-                width: 14px;
-                margin: -3px 0;
-                border-radius: 7px;
+            QSlider {
+                min-height: 12px;
+                margin: 2px 8px;
             }
             QSlider::groove:horizontal {
-                height: 6px;
+                height: 4px;
                 background: #E0E0E0;
                 margin: 0px;
-                border-radius: 3px;
+                border-radius: 2px;
             }
-            QSlider {
-                margin: 2px 8px;
+            QSlider::handle:horizontal {
+                background: #9E9E9E;
+                width: 12px;
+                height: 12px;
+                margin: -4px 0;
+                border-radius: 6px;
             }
         """)
         time_display.addWidget(self.timeline, stretch=1)
@@ -573,33 +576,13 @@ class VideoPlayerWindow(QMainWindow):
         self.draw_timeline_marks()
 
     def draw_timeline_marks(self):
-        # 基础样式
-        base_style = """
-            QSlider {
-                min-height: 20px;
-            }
+        # 仅添加标记样式
+        mark_style = """
             QSlider::groove:horizontal {
-                background: #E0E0E0;
-                height: 6px;
-                border-radius: 3px;
-                margin: 5px 0;
-            }
-            QSlider::sub-page:horizontal {
-                background: #2196F3;
-                height: 6px;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #2196F3;
-                width: 14px;
-                height: 14px;
-                margin: -3px 0;
-                border-radius: 7px;
+                border-left: 0% solid transparent;
+                border-right: 100% solid transparent;
             }
         """
-        
-        # 添加标记样式
-        mark_style = ""
         if self.timeline.maximum() > 0:
             for mark in self.marks:
                 position = mark['frame'] / self.timeline.maximum()
@@ -614,7 +597,8 @@ class VideoPlayerWindow(QMainWindow):
                     }}
                 """
         
-        self.timeline.setStyleSheet(base_style + mark_style)
+        # 保留现有样式并添加标记样式
+        self.timeline.setStyleSheet(self.timeline.styleSheet() + mark_style)
         
         # 清除旧标记
         if hasattr(self, 'mark_labels'):
@@ -627,23 +611,18 @@ class VideoPlayerWindow(QMainWindow):
             # 获取时间轴相对位置和宽度
             timeline_pos = self.timeline.pos()
             timeline_width = self.timeline.width()
-            time_label_width = self.current_time_label.width()
-            
-            # 计算标记容器相对位置和宽度
-            timeline_margin = 10  # 与进度条相同的边距
-            marks_container_width = timeline_width - time_label_width - timeline_margin * 2
-            marks_container_x = timeline_pos.x() + time_label_width + timeline_margin
             
             # 设置标记容器位置和大小
             self.marks_container.setGeometry(
-                marks_container_x,  # x位置右移一个时间显示模块宽度并加上边距
-                timeline_pos.y() + self.timeline.height(),  # y位置在进度条下方
-                marks_container_width,  # 宽度减去时间显示模块宽度和边距
-                20  # 固定高度
+                timeline_pos.x(),  # 与时间轴对齐
+                timeline_pos.y(),  # 与时间轴对齐
+                timeline_width,  # 与时间轴同宽
+                self.timeline.height()  # 与时间轴同高
             )
+            self.marks_container.setStyleSheet("background: transparent;")
             
-            # 计算标记位置（基于标记容器宽度）
-            position = (mark['frame'] / self.timeline.maximum()) * marks_container_width
+            # 计算标记位置（基于时间轴宽度）
+            position = (mark['frame'] / self.timeline.maximum()) * timeline_width
             
             # 创建标记
             label = QLabel("▼", self.marks_container)
