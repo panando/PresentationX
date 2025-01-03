@@ -191,6 +191,15 @@ class VideoPlayerWindow(QMainWindow):
         # 添加可调整大小的分割器
         self.splitter = QSplitter(Qt.Orientation.Vertical)
         
+        # 导入导出按钮
+        import_export_layout = QHBoxLayout()
+        self.export_btn = QPushButton("导出标记")
+        self.import_btn = QPushButton("导入标记")
+        self.export_btn.clicked.connect(self.export_marks)
+        self.import_btn.clicked.connect(self.import_marks)
+        import_export_layout.addWidget(self.export_btn)
+        import_export_layout.addWidget(self.import_btn)
+
         # 标记列表
         self.mark_list = QListWidget()
         self.mark_list.itemDoubleClicked.connect(self.edit_mark)
@@ -199,6 +208,7 @@ class VideoPlayerWindow(QMainWindow):
         list_container = QWidget()
         list_layout = QVBoxLayout(list_container)
         list_layout.addWidget(QLabel("标记列表"))
+        list_layout.addLayout(import_export_layout)
         list_layout.addWidget(self.mark_list)
         
         # 添加可调整大小的分割器
@@ -304,6 +314,10 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
+            # 同步音频位置
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0:
+                self.media_player.setPosition(int(current_frame / fps * 1000))
             self.media_player.play()  # 播放音频
         else:
             # 否则跳转到下一个标记
@@ -318,7 +332,10 @@ class VideoPlayerWindow(QMainWindow):
                 self.is_playing = True
                 self.play_btn.setText("暂停")
                 self.timer.start()
-                self.media_player.setPosition(int(next_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+                # 同步音频位置
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+                if fps > 0:
+                    self.media_player.setPosition(int(next_mark['frame'] / fps * 1000))
                 self.media_player.play()  # 播放音频
                 self.update_frame()
             
@@ -336,7 +353,10 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
-            self.media_player.setPosition(int(prev_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+            # 同步音频位置
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0:
+                self.media_player.setPosition(int(prev_mark['frame'] / fps * 1000))
             self.media_player.play()  # 播放音频
             self.update_frame()
         elif len(prev_marks) == 1:
@@ -346,27 +366,48 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = True
             self.play_btn.setText("暂停")
             self.timer.start()
-            self.media_player.setPosition(int(prev_mark['frame'] / self.cap.get(cv2.CAP_PROP_FPS) * 1000))  # 同步音频位置
+            # 同步音频位置
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0:
+                self.media_player.setPosition(int(prev_mark['frame'] / fps * 1000))
             self.media_player.play()  # 播放音频
             self.update_frame()
 
     def jump_to_prev_mark_with_interval(self):
         """500ms内连续按下快捷键跳转到上上个标记"""
+        # 如果已经有延迟跳转在等待，则取消
+        if hasattr(self, 'delayed_jump_timer') and self.delayed_jump_timer.isActive():
+            self.delayed_jump_timer.stop()
+            
+        # 创建延迟跳转定时器
+        self.delayed_jump_timer = QTimer()
+        self.delayed_jump_timer.setSingleShot(True)
+        
         current_time = QDateTime.currentMSecsSinceEpoch()
         if current_time - self.last_prev_key_time < self.prev_key_interval:
-            # 如果两次按键间隔小于500ms，跳转到上上个标记
-            self.jump_to_prev_mark()
+            # 如果两次按键间隔小于500ms，延迟500ms后跳转到上上个标记
+            self.delayed_jump_timer.timeout.connect(self.jump_to_prev_mark)
         else:
-            # 否则跳转到上一个标记
-            current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
-            prev_marks = [mark for mark in reversed(self.marks) if mark['frame'] < current_frame]
-            if prev_marks:
-                prev_mark = prev_marks[0]
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
-                self.is_playing = True
-                self.play_btn.setText("暂停")
-                self.timer.start()
-                self.update_frame()
+            # 否则延迟500ms后跳转到上一个标记
+            def delayed_jump():
+                current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+                prev_marks = [mark for mark in reversed(self.marks) if mark['frame'] < current_frame]
+                if prev_marks:
+                    prev_mark = prev_marks[0]
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
+                    self.is_playing = True
+                    self.play_btn.setText("暂停")
+                    self.timer.start()
+                    # 同步音频位置
+                    fps = self.cap.get(cv2.CAP_PROP_FPS)
+                    if fps > 0:
+                        self.media_player.setPosition(int(prev_mark['frame'] / fps * 1000))
+                    self.media_player.play()  # 播放音频
+                    self.update_frame()
+            self.delayed_jump_timer.timeout.connect(delayed_jump)
+        
+        # 启动500ms延迟定时器
+        self.delayed_jump_timer.start(500)
         
         # 更新最后按键时间
         self.last_prev_key_time = current_time
@@ -503,6 +544,11 @@ class VideoPlayerWindow(QMainWindow):
             self.is_playing = False
             self.play_btn.setText("播放")
             self.timer.stop()
+            # 同步音频位置
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0:
+                self.media_player.setPosition(int(frame_num / fps * 1000))
+            self.media_player.pause()  # 暂停音频
             # 立即显示目标帧
             ret, frame = self.cap.read()
             if ret:
@@ -695,6 +741,64 @@ class VideoPlayerWindow(QMainWindow):
             if ok:
                 self.marks[index]['note'] = text
                 self.update_mark_list()
+
+    def export_marks(self):
+        """导出标记到txt文件"""
+        if not self.marks:
+            QMessageBox.warning(self, "警告", "没有可导出的标记")
+            return
+            
+        file_name, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出标记",
+            "",
+            "Text Files (*.txt)"
+        )
+        
+        if file_name:
+            try:
+                with open(file_name, 'w', encoding='utf-8') as f:
+                    for mark in self.marks:
+                        time_str = self.frame_to_time(mark['frame'])
+                        f.write(f"{time_str} {mark['note']}\n")
+                QMessageBox.information(self, "成功", "标记已成功导出")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+
+    def import_marks(self):
+        """从txt文件导入标记"""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "导入标记",
+            "",
+            "Text Files (*.txt)"
+        )
+        
+        if file_name:
+            try:
+                with open(file_name, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    new_marks = []
+                    for line in lines:
+                        # 分割时间和注释
+                        parts = line.strip().split(' ', 1)
+                        if len(parts) >= 1:
+                            time_str = parts[0]
+                            note = parts[1] if len(parts) > 1 else ''
+                            # 将时间字符串转换为帧数
+                            h, m, s = map(int, time_str.split(':'))
+                            fps = self.cap.get(cv2.CAP_PROP_FPS)
+                            frame = int((h * 3600 + m * 60 + s) * fps)
+                            new_marks.append({
+                                'frame': frame,
+                                'note': note
+                            })
+                    self.marks = new_marks
+                    self.update_mark_list()
+                    self.draw_timeline_marks()
+                QMessageBox.information(self, "成功", "标记已成功导入")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"导入失败: {str(e)}")
 
     def stop_video(self):
         if self.cap is not None:
