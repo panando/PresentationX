@@ -1,12 +1,9 @@
-import sys
-from PyQt6.QtWidgets import QApplication
 from video_player import VideoPlayerWindow
-
-def main():
-    app = QApplication(sys.argv)
-    window = VideoPlayerWindow()
-    window.show()
-    sys.exit(app.exec())
+from PyQt6.QtWidgets import QApplication
+import sys
 
 if __name__ == "__main__":
-    main()
+    app = QApplication(sys.argv)
+    player = VideoPlayerWindow()
+    player.show()
+    sys.exit(app.exec())

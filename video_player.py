@@ -34,6 +34,26 @@ class VideoPlayerWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QHBoxLayout(central_widget)
         
+        # 使用系统默认窗口控制
+        self.old_pos = None
+        
+        # 添加窗口拖动功能
+        def mousePressEvent(event):
+            self.old_pos = event.globalPosition().toPoint()
+            
+        def mouseMoveEvent(event):
+            if self.old_pos:
+                delta = event.globalPosition().toPoint() - self.old_pos
+                self.move(self.pos() + delta)
+                self.old_pos = event.globalPosition().toPoint()
+                
+        def mouseReleaseEvent(event):
+            self.old_pos = None
+            
+        central_widget.mousePressEvent = mousePressEvent
+        central_widget.mouseMoveEvent = mouseMoveEvent
+        central_widget.mouseReleaseEvent = mouseReleaseEvent
+        
         # 左侧视频区域
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
@@ -72,15 +92,26 @@ class VideoPlayerWindow(QMainWindow):
         self.load_btn = QPushButton("加载视频")
         self.play_btn = QPushButton("播放")
         self.mark_btn = QPushButton("添加标记")
+        self.stop_btn = QPushButton("停止")
         
         self.load_btn.clicked.connect(self.load_video)
         self.play_btn.clicked.connect(self.toggle_play)
         self.mark_btn.clicked.connect(self.add_mark)
+        self.stop_btn.clicked.connect(self.stop_video)
+        
+        # 添加全屏按钮
+        self.fullscreen_btn = QPushButton("全屏")
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         
         controls.addWidget(self.load_btn)
         controls.addWidget(self.play_btn)
         controls.addWidget(self.mark_btn)
+        controls.addWidget(self.stop_btn)
+        controls.addWidget(self.fullscreen_btn)
         left_layout.addLayout(controls)
+        
+        # 设置最小窗口大小
+        self.setMinimumSize(800, 600)
         
         # 右侧标记列表
         right_widget = QWidget()
@@ -109,8 +140,13 @@ class VideoPlayerWindow(QMainWindow):
                 self.cap = cv2.VideoCapture(file_name)
                 total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.timeline.setMaximum(total_frames)
-                self.marks = []
+                # 添加默认的开始和结束标记
+                self.marks = [
+                    {'frame': 0, 'note': '开始'},
+                    {'frame': total_frames - 1, 'note': '结束'}
+                ]
                 self.mark_list.clear()
+                self.update_mark_list()
                 self.update_frame()
                 self.draw_timeline_marks()
         except Exception as e:
@@ -120,13 +156,40 @@ class VideoPlayerWindow(QMainWindow):
         if self.cap is None:
             return
         
-        self.is_playing = not self.is_playing
-        if self.is_playing:
-            self.play_btn.setText("暂停")
-            self.timer.start()
+        if not self.is_playing:
+            # 如果没有标记，从头播放
+            if not self.marks:
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                self.is_playing = True
+                self.play_btn.setText("暂停")
+                self.timer.start()
+            else:
+                # 查找下一个标记
+                current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+                next_mark = None
+                for mark in self.marks:
+                    if mark['frame'] > current_frame:
+                        next_mark = mark
+                        break
+                
+                if next_mark:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
+                    self.is_playing = True
+                    self.play_btn.setText("暂停")
+                    self.timer.start()
+                else:
+                    # 没有下一个标记，回到第一个标记
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.marks[0]['frame'])
+                    self.is_playing = True
+                    self.play_btn.setText("暂停")
+                    self.timer.start()
         else:
+            self.is_playing = False
             self.play_btn.setText("播放")
             self.timer.stop()
+            # 暂停时显示当前帧
+            if self.current_frame_cache is not None:
+                self.display_frame(self.current_frame_cache)
             
     def update_frame(self):
         if self.cap is None or self.seek_timer.isActive():
@@ -166,10 +229,23 @@ class VideoPlayerWindow(QMainWindow):
         self.update_mark_list()
         self.draw_timeline_marks()
             
+    def frame_to_time(self, frame):
+        if self.cap is None:
+            return "00:00:00"
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            return "00:00:00"
+        total_seconds = int(frame / fps)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+
     def update_mark_list(self):
         self.mark_list.clear()
         for mark in self.marks:
-            display_text = f"帧:{int(mark['frame'])}"
+            time_str = self.frame_to_time(mark['frame'])
+            display_text = f"{time_str}"
             if mark['note']:  # 如果有注释则显示
                 display_text += f" - {mark['note']}"
             self.mark_list.addItem(display_text)
@@ -225,11 +301,17 @@ class VideoPlayerWindow(QMainWindow):
             scaled_pixmap = QPixmap.fromImage(img).scaled(
                 self.video_label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.FastTransformation  # 使用快速转换提高性能
+                Qt.TransformationMode.SmoothTransformation  # 使用高质量缩放
             )
             self.video_label.setPixmap(scaled_pixmap)
         except Exception as e:
             print(f"显示帧出错: {str(e)}")
+            
+    def resizeEvent(self, event):
+        """窗口大小改变时重新调整视频显示"""
+        super().resizeEvent(event)
+        if self.current_frame_cache is not None:
+            self.display_frame(self.current_frame_cache)
 
     def draw_timeline_marks(self):
         base_style = """
@@ -257,20 +339,16 @@ class VideoPlayerWindow(QMainWindow):
         mark_indicators = ""
         if self.timeline.maximum() > 0:
             for mark in self.marks:
-                position = (mark['frame'] / self.timeline.maximum()) * 100
+                position = mark['frame'] / self.timeline.maximum()
                 mark_indicators += f"""
                     QSlider::handle:horizontal {{
                         background: #E0E0E0;
                     }}
-                    QSlider::handle:horizontal::after {{
-                        content: "";
-                        position: absolute;
-                        left: {position}%;
-                        top: -8px;
-                        width: 2px;
-                        height: 26px;
-                        background: #FF4081;
-                        margin-left: -1px;
+                    QSlider::sub-page:horizontal {{
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:{max(0, position-0.01)} #E0E0E0,
+                            stop:{position} #FF4081,
+                            stop:{min(1, position+0.01)} #E0E0E0);
                     }}
                 """
         
@@ -283,13 +361,29 @@ class VideoPlayerWindow(QMainWindow):
         
     def show_mark_context_menu(self, position):
         menu = QMenu()
-        edit_action = menu.addAction("注释标记")
+        edit_action = menu.addAction("编辑注释")
+        delete_action = menu.addAction("删除标记")
         action = menu.exec(self.mark_list.mapToGlobal(position))
         
-        if action == edit_action:
-            current_item = self.mark_list.itemAt(position)
-            if current_item:
-                self.add_mark_note(self.mark_list.row(current_item))
+        current_item = self.mark_list.itemAt(position)
+        if current_item:
+            index = self.mark_list.row(current_item)
+            if action == edit_action:
+                self.add_mark_note(index)
+            elif action == delete_action:
+                self.delete_mark(index)
+
+    def delete_mark(self, index):
+        if 0 <= index < len(self.marks):
+            self.marks.pop(index)
+            self.update_mark_list()
+            self.draw_timeline_marks()
+
+    def toggle_maximized(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def add_mark_note(self, index):
         if 0 <= index < len(self.marks):
@@ -301,3 +395,28 @@ class VideoPlayerWindow(QMainWindow):
             if ok:
                 self.marks[index]['note'] = text
                 self.update_mark_list()
+
+    def stop_video(self):
+        if self.cap is not None:
+            self.is_playing = False
+            self.play_btn.setText("播放")
+            self.timer.stop()
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self.update_frame()
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+            self.fullscreen_btn.setText("全屏")
+        else:
+            self.showFullScreen()
+            self.fullscreen_btn.setText("退出全屏")
+
+if __name__ == "__main__":
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    
+    app = QApplication(sys.argv)
+    player = VideoPlayerWindow()
+    player.show()
+    sys.exit(app.exec())
