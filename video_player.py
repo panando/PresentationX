@@ -130,13 +130,13 @@ class VideoPlayerWindow(QMainWindow):
 
         # 创建标记区域布局
         marks_display = QHBoxLayout()
-        marks_display.setContentsMargins(0, 0, 0, 0)
+        marks_display.setContentsMargins(0, 0, 8, 0)  # 将右边距设为8px，左边距为0
         marks_display.setSpacing(5)
 
         # 标记时间标签
         self.current_mark_time = QLabel("--:--:--")
         self.current_mark_time.setStyleSheet(TIME_LABEL_STYLE)
-        self.current_mark_time.setFixedWidth(LEFT_TIME_WIDTH)
+        self.current_mark_time.setFixedWidth(LEFT_TIME_WIDTH)  # 恢复原始宽度
 
         # 标记容器
         marks_frame_container = QWidget()
