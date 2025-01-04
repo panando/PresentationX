@@ -245,9 +245,15 @@ class VideoPlayerWindow(QMainWindow):
         self.shortcut_fullscreen = QShortcut(QKeySequence("F11"), self)
         self.shortcut_fullscreen.activated.connect(self.toggle_fullscreen)
         
-        # 回车键全屏
+        # 修改F键和`键为全屏快捷键
+        self.shortcut_f = QShortcut(Qt.Key.Key_F, self)
+        self.shortcut_f.activated.connect(self.toggle_fullscreen)
+        self.shortcut_backtick = QShortcut(Qt.Key.Key_QuoteLeft, self)  # 对应`键
+        self.shortcut_backtick.activated.connect(self.toggle_fullscreen)
+        
+        # 将回车键改为跳转到上个标记
         self.shortcut_enter = QShortcut(Qt.Key.Key_Return, self)
-        self.shortcut_enter.activated.connect(self.toggle_fullscreen)
+        self.shortcut_enter.activated.connect(self.jump_to_prev_one_mark)
         
         # 空格键播放/暂停
         self.shortcut_space = QShortcut(Qt.Key.Key_Space, self)
@@ -856,6 +862,13 @@ class VideoPlayerWindow(QMainWindow):
         QShortcut(Qt.Key.Key_Down, self.fullscreen_window).activated.connect(self.jump_to_next_mark)
         QShortcut(Qt.Key.Key_Left, self.fullscreen_window).activated.connect(self.jump_to_prev_mark)
         QShortcut(Qt.Key.Key_Up, self.fullscreen_window).activated.connect(self.jump_to_prev_mark)
+        
+        # 添加F键和`键全屏快捷键
+        QShortcut(Qt.Key.Key_F, self.fullscreen_window).activated.connect(self.toggle_fullscreen)
+        QShortcut(Qt.Key.Key_QuoteLeft, self.fullscreen_window).activated.connect(self.toggle_fullscreen)
+        
+        # 添加回车键跳转到上个标记
+        QShortcut(Qt.Key.Key_Return, self.fullscreen_window).activated.connect(self.jump_to_prev_one_mark)
         
         # 添加R键和Shift键跳转到上个标记的快捷键
         QShortcut(Qt.Key.Key_R, self.fullscreen_window).activated.connect(self.jump_to_prev_one_mark)
