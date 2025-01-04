@@ -886,34 +886,39 @@ class VideoPlayerWindow(QMainWindow):
                 with open(file_name, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
                     new_marks = []
+                    fps = self.cap.get(cv2.CAP_PROP_FPS)
+                    
                     for line in lines:
                         # 分割时间和注释
                         parts = line.strip().split(' ', 1)
                         if len(parts) >= 1:
-                            time_str = parts[0]
+                            time_str = parts[0]  # 格式: MM:SS.xxx
                             note = parts[1] if len(parts) > 1 else ''
                             
-                            # 解析 MM:SS.xxx 格式的时间
-                            minutes, rest = time_str.split(':')
-                            seconds, milliseconds = rest.split('.')
-                            
-                            # 转换为总秒数
-                            total_seconds = (int(minutes) * 60 + 
-                                            int(seconds) + 
-                                            int(milliseconds) / 1000)
-                            
-                            # 转换为帧数
-                            fps = self.cap.get(cv2.CAP_PROP_FPS)
-                            frame = int(total_seconds * fps)
-                            
-                            new_marks.append({
-                                'frame': frame,
-                                'note': note
-                            })
-                    self.marks = new_marks
-                    self.update_mark_list()
-                    self.draw_timeline_marks()
-                QMessageBox.information(self, "成功", "标记已成功导入")
+                            try:
+                                # 解析时间字符串
+                                minutes, rest = time_str.split(':')
+                                seconds, milliseconds = rest.split('.')
+                                total_seconds = float(minutes) * 60 + float(seconds) + float(milliseconds) / 1000
+                                frame = int(total_seconds * fps)
+                                
+                                # 添加标记
+                                new_marks.append({
+                                    'frame': frame,
+                                    'note': note
+                                })
+                            except ValueError:
+                                print(f"跳过无效的时间格式: {time_str}")
+                                continue
+                                
+                    if new_marks:
+                        self.marks = new_marks
+                        self.update_mark_list()
+                        self.draw_timeline_marks()
+                        QMessageBox.information(self, "成功", "标记已成功导入")
+                    else:
+                        QMessageBox.warning(self, "警告", "没有找到有效的标记")
+                        
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"导入失败: {str(e)}")
 
