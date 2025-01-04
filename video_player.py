@@ -2,7 +2,8 @@ import cv2
 import json
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
-                            QInputDialog, QSlider, QMenu, QSplitter, QMessageBox, QFrame)
+                            QInputDialog, QSlider, QMenu, QSplitter, QMessageBox, 
+                            QFrame, QApplication)  # 添加 QApplication
 from styles import (TIMELINE_STYLE, VOLUME_SLIDER_STYLE, 
                    TIME_LABEL_STYLE, MARK_LABEL_STYLE)
 from PyQt6.QtGui import QShortcut
@@ -130,7 +131,7 @@ class VideoPlayerWindow(QMainWindow):
 
         # 创建标记区域布局
         marks_display = QHBoxLayout()
-        marks_display.setContentsMargins(0, 0, 8, 0)  # 将右边距设为8px，左边距为0
+        marks_display.setContentsMargins(-2, 0, 8, 0)  # 将左边距设为-2px，右边距为8px
         marks_display.setSpacing(5)
 
         # 标记时间标签
@@ -222,6 +223,7 @@ class VideoPlayerWindow(QMainWindow):
 
         # 标记列表
         self.mark_list = QListWidget()
+        self.mark_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.mark_list.itemDoubleClicked.connect(self.edit_mark)
         
         # 创建容器并添加控件
@@ -384,7 +386,7 @@ class VideoPlayerWindow(QMainWindow):
                 self.update_frame()
             
     def jump_to_prev_mark(self):
-        """直接跳转到上上个标记并播放"""
+        """跳转到上一个标记，如果当前是第二个标记则跳转到起始标记"""
         if self.cap is None or not self.marks:
             return
             
@@ -395,15 +397,20 @@ class VideoPlayerWindow(QMainWindow):
             # 跳转到上上个标记
             prev_mark = prev_marks[1]
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, prev_mark['frame'])
-            self.is_playing = True
-            self.play_btn.setText("暂停")
-            self.timer.start()
-            # 同步音频位置
-            fps = self.cap.get(cv2.CAP_PROP_FPS)
-            if fps > 0:
-                self.media_player.setPosition(int(prev_mark['frame'] / fps * 1000))
-            self.media_player.play()
-            self.update_frame()
+        elif len(prev_marks) == 1 and prev_marks[0]['frame'] == self.marks[0]['frame']:
+            # 如果只有一个之前的标记且是起始标记，跳转到起始标记
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.marks[0]['frame'])
+        
+        self.is_playing = True
+        self.play_btn.setText("暂停")
+        self.timer.start()
+        # 同步音频位置
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps > 0:
+            current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            self.media_player.setPosition(int(current_frame / fps * 1000))
+        self.media_player.play()
+        self.update_frame()
     
     def jump_to_prev_one_mark(self):
         """跳转到上一个标记并播放"""
@@ -703,44 +710,127 @@ class VideoPlayerWindow(QMainWindow):
         
     def show_mark_context_menu(self, position):
         menu = QMenu()
-        edit_action = menu.addAction("编辑注释")
-        delete_action = menu.addAction("删除标记")
+        
+        # 基本操作
+        add_action = menu.addAction("新增标记")
+        
+        # 获取选中的项目
+        selected_items = self.mark_list.selectedItems()
+        if selected_items:
+            edit_action = menu.addAction("编辑注释")
+            edit_time_action = menu.addAction("编辑时间")
+            delete_action = menu.addAction("删除选中")
+            
+            # 选择操作
+            select_menu = menu.addMenu("选择")
+            select_all_action = select_menu.addAction("全选")
+            deselect_all_action = select_menu.addAction("取消选择")
+            invert_selection_action = select_menu.addAction("反选")
+        
         action = menu.exec(self.mark_list.mapToGlobal(position))
         
-        current_item = self.mark_list.itemAt(position)
-        if current_item:
-            index = self.mark_list.row(current_item)
-            if action == edit_action:
-                self.add_mark_note(index)
-            elif action == delete_action:
-                self.delete_mark(index)
+        if action == add_action:
+            self.add_mark()
+        elif selected_items and action == edit_action:
+            self.edit_selected_marks_note()
+        elif selected_items and action == edit_time_action:
+            self.edit_mark_time(self.mark_list.row(selected_items[0]))
+        elif selected_items and action == delete_action:
+            self.delete_selected_marks()
+        elif selected_items and action == select_all_action:
+            self.mark_list.selectAll()
+        elif selected_items and action == deselect_all_action:
+            self.mark_list.clearSelection()
+        elif selected_items and action == invert_selection_action:
+            self.invert_selection()
 
-    def delete_mark(self, index):
-        if 0 <= index < len(self.marks):
-            # 获取要删除的标记信息
-            mark = self.marks[index]
-            time_str = self.frame_to_mark_time(mark['frame'])
-            note = mark['note'] if mark['note'] else "无注释"
+    def edit_selected_marks_note(self):
+        """批量编辑选中标记的注释"""
+        selected_items = self.mark_list.selectedItems()
+        if not selected_items:
+            return
             
-            # 弹出确认对话框
-            confirm = QMessageBox.question(
+        # 如果只选中一个项目，显示其当前注释
+        if len(selected_items) == 1:
+            index = self.mark_list.row(selected_items[0])
+            current_note = self.marks[index]['note']
+        else:
+            current_note = ""
+            
+        text, ok = QInputDialog.getText(
+            self, 
+            f"编辑{len(selected_items)}个标记的注释",
+            "请输入标记注释：",
+            text=current_note
+        )
+        
+        if ok:
+            for item in selected_items:
+                index = self.mark_list.row(item)
+                self.marks[index]['note'] = text
+            self.update_mark_list()
+
+    def edit_mark_time(self, index):
+        """编辑标记的时间戳"""
+        if 0 <= index < len(self.marks):
+            current_time = self.frame_to_mark_time(self.marks[index]['frame'])
+            text, ok = QInputDialog.getText(
                 self,
-                "确认删除",
-                f"确定要删除标记吗？\n时间: {time_str}\n注释: {note}",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                "编辑时间戳",
+                "请输入新的时间 (格式: MM:SS.xxx)：",
+                text=current_time
             )
             
-            if confirm == QMessageBox.StandardButton.Yes:
-                self.marks.pop(index)
-                self.update_mark_list()
-                self.draw_timeline_marks()
+            if ok:
+                try:
+                    # 解析时间字符串
+                    minutes, seconds = text.split(':')
+                    seconds, milliseconds = seconds.split('.')
+                    
+                    # 转换为帧数
+                    total_seconds = int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
+                    fps = self.cap.get(cv2.CAP_PROP_FPS)
+                    new_frame = int(total_seconds * fps)
+                    
+                    # 检查是否在视频范围内
+                    if 0 <= new_frame < self.cap.get(cv2.CAP_PROP_FRAME_COUNT):
+                        self.marks[index]['frame'] = new_frame
+                        self.marks.sort(key=lambda x: x['frame'])
+                        self.update_mark_list()
+                        self.draw_timeline_marks()
+                    else:
+                        QMessageBox.warning(self, "警告", "时间戳超出视频范围")
+                except:
+                    QMessageBox.warning(self, "错误", "时间格式不正确，请使用 MM:SS.xxx 格式")
 
-    def delete_selected_mark(self):
-        """删除当前选中的标记"""
-        current_item = self.mark_list.currentItem()
-        if current_item:
-            index = self.mark_list.row(current_item)
-            self.delete_mark(index)
+    def delete_selected_marks(self):
+        """删除选中的标记"""
+        selected_items = self.mark_list.selectedItems()
+        if not selected_items:
+            return
+            
+        # 确认删除
+        confirm = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除选中的 {len(selected_items)} 个标记吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            # 获取所有选中项的索引
+            indices = [self.mark_list.row(item) for item in selected_items]
+            # 从后向前删除，避免索引变化
+            for index in sorted(indices, reverse=True):
+                self.marks.pop(index)
+            self.update_mark_list()
+            self.draw_timeline_marks()
+
+    def invert_selection(self):
+        """反选标记列表中的项目"""
+        for i in range(self.mark_list.count()):
+            item = self.mark_list.item(i)
+            item.setSelected(not item.isSelected())
 
     def toggle_maximized(self):
         if self.isMaximized():
@@ -802,10 +892,20 @@ class VideoPlayerWindow(QMainWindow):
                         if len(parts) >= 1:
                             time_str = parts[0]
                             note = parts[1] if len(parts) > 1 else ''
-                            # 将时间字符串转换为帧数
-                            h, m, s = map(int, time_str.split(':'))
+                            
+                            # 解析 MM:SS.xxx 格式的时间
+                            minutes, rest = time_str.split(':')
+                            seconds, milliseconds = rest.split('.')
+                            
+                            # 转换为总秒数
+                            total_seconds = (int(minutes) * 60 + 
+                                            int(seconds) + 
+                                            int(milliseconds) / 1000)
+                            
+                            # 转换为帧数
                             fps = self.cap.get(cv2.CAP_PROP_FPS)
-                            frame = int((h * 3600 + m * 60 + s) * fps)
+                            frame = int(total_seconds * fps)
+                            
                             new_marks.append({
                                 'frame': frame,
                                 'note': note
@@ -909,7 +1009,10 @@ class VideoPlayerWindow(QMainWindow):
             self.toggle_fullscreen()
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+        """处理键盘事件"""
+        if event.key() == Qt.Key.Key_A and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.mark_list.selectAll()
+        elif event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
             self.fullscreen_btn.setText("全屏")
         super().keyPressEvent(event)
@@ -956,6 +1059,12 @@ class VideoPlayerWindow(QMainWindow):
         else:
             self.next_mark_time.setText("--:--.---")
             self.duration_label.setText("00:00.000")
+
+    def delete_selected_mark(self):
+        """删除当前选中的标记"""
+        selected_items = self.mark_list.selectedItems()
+        if selected_items:
+            self.delete_selected_marks()
 
 if __name__ == "__main__":
     import sys
