@@ -2,10 +2,9 @@ import cv2
 import json
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
-                            QInputDialog, QSlider, QMenu, QSplitter, QMessageBox)
+                            QInputDialog, QSlider, QMenu, QSplitter, QMessageBox, QFrame)
 from styles import (TIMELINE_STYLE, VOLUME_SLIDER_STYLE, 
-                   TIME_LABEL_STYLE, MARKS_CONTAINER_STYLE,
-                   MARK_LABEL_STYLE)
+                   TIME_LABEL_STYLE, MARK_LABEL_STYLE)
 from PyQt6.QtGui import QShortcut
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime, QUrl
 from PyQt6.QtGui import QImage, QPixmap, QKeySequence
@@ -83,14 +82,15 @@ class VideoPlayerWindow(QMainWindow):
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(self.video_label, stretch=8)  # 视频区域占主要空间
         
-        # 时间轴
+        # 时间轴和标记区域容器
         timeline_container = QWidget()
         timeline_layout = QVBoxLayout(timeline_container)
-        timeline_layout.setContentsMargins(10, 2, 10, 2)  # 进一步减少内边距
-        timeline_layout.setSpacing(2)  # 进一步减少间距
+        timeline_layout.setContentsMargins(10, 2, 10, 2)  # 整体容器的边距
+        timeline_layout.setSpacing(2)
         
-        # 时间轴和进度显示
+        # 创建时间显示面板
         time_display = QHBoxLayout()
+        time_display.setContentsMargins(0, 0, 0, 0)  # 移除内边距
         time_display.setSpacing(5)
         
         # 当前时间
@@ -123,10 +123,47 @@ class VideoPlayerWindow(QMainWindow):
         
         timeline_layout.addLayout(time_display)
         
+        # 标记容器和时间显示区域
+        marks_container = QWidget()
+        marks_layout = QHBoxLayout(marks_container)
+        marks_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 当前标记时间
+        self.current_mark_time = QLabel("--:--:--")
+        self.current_mark_time.setStyleSheet(TIME_LABEL_STYLE)
+        marks_layout.addWidget(self.current_mark_time)
+        
         # 标记容器
-        self.marks_container = QWidget()
-        self.marks_container.setStyleSheet(MARKS_CONTAINER_STYLE)
-        timeline_layout.addWidget(self.marks_container)
+        self.marks_frame = QFrame()
+        self.marks_frame.setStyleSheet("""
+            QFrame { 
+                border: 1px solid #AAAAAA; 
+                background: transparent;
+                border-radius: 5px;
+                margin: 2px 0px;
+                padding: 2px 8px;  /* 添加内边距以匹配时间轴 */
+            }
+        """)
+        self.marks_frame.setFixedHeight(20)  # 减小高度
+        marks_layout.addWidget(self.marks_frame, stretch=1)
+        
+        # 下一标记时间和时长
+        next_mark_info = QWidget()
+        next_mark_layout = QHBoxLayout(next_mark_info)
+        next_mark_layout.setContentsMargins(0, 0, 0, 0)
+        next_mark_layout.setSpacing(5)
+        
+        self.next_mark_time = QLabel("--:--:--")
+        self.next_mark_time.setStyleSheet(TIME_LABEL_STYLE)
+        self.duration_label = QLabel("(00:00.000)")
+        self.duration_label.setStyleSheet(TIME_LABEL_STYLE)
+        self.duration_label.setFixedWidth(80)  # 设置固定宽度与音量控制相同
+        
+        next_mark_layout.addWidget(self.next_mark_time)
+        next_mark_layout.addWidget(self.duration_label)
+        marks_layout.addWidget(next_mark_info)
+        
+        timeline_layout.addWidget(marks_container)
         
         left_layout.addWidget(timeline_container, stretch=1)  # 时间轴区域占较小空间
         
@@ -240,7 +277,7 @@ class VideoPlayerWindow(QMainWindow):
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
         # 同步音频位置
         fps = self.cap.get(cv2.CAP_PROP_FPS)
-        if fps > 0:
+        if (fps > 0):
             self.media_player.setPosition(int(target_frame / fps * 1000))
         
     def set_volume(self, value):
@@ -452,6 +489,7 @@ class VideoPlayerWindow(QMainWindow):
                         self.timer.stop()
                         self.media_player.pause()  # 暂停音频
                         break
+                self.update_mark_times()  # 添加这一行
         except Exception as e:
             print(f"更新帧出错: {str(e)}")
             
@@ -594,63 +632,39 @@ class VideoPlayerWindow(QMainWindow):
         self.draw_timeline_marks()
 
     def draw_timeline_marks(self):
-        # 仅添加标记样式
-        mark_style = """
-            QSlider::groove:horizontal {
-                border-left: 0% solid transparent;
-                border-right: 100% solid transparent;
-            }
-        """
-        if self.timeline.maximum() > 0:
-            for mark in self.marks:
-                position = mark['frame'] / self.timeline.maximum()
-                mark_style += f"""
-                    QSlider::groove:horizontal {{
-                        border-left: {position * 100}% solid transparent;
-                        border-right: {(1 - position) * 100}% solid transparent;
-                    }}
-                    QSlider::add-page:horizontal {{
-                        border-left: 2px solid #FF4081;
-                        margin-left: -2px;
-                    }}
-                """
-        
-        # 保留现有样式并添加标记样式
-        self.timeline.setStyleSheet(self.timeline.styleSheet() + mark_style)
-        
+        """重绘时间轴标记"""
         # 清除旧标记
         if hasattr(self, 'mark_labels'):
             for label in self.mark_labels:
                 label.deleteLater()
         self.mark_labels = []
         
-        # 在时间轴下方添加标记
+        # 调整标记位置计算，考虑容器边距
+        timeline_margins = 8  # 与时间轴的左右边距相同
+        container_width = self.marks_frame.width() - (timeline_margins * 2)
+        
+        # 在标记容器中添加标记
         for mark in self.marks:
-            # 获取时间轴相对位置和宽度
-            timeline_pos = self.timeline.pos()
-            timeline_width = self.timeline.width()
+            # 计算标记位置，加上左边距补偿
+            position = (mark['frame'] / self.timeline.maximum()) * container_width + timeline_margins
             
-            # 设置标记容器位置和大小
-            self.marks_container.setGeometry(
-                timeline_pos.x(),  # 与时间轴对齐
-                timeline_pos.y(),  # 与时间轴对齐
-                timeline_width,  # 与时间轴同宽
-                self.timeline.height()  # 与时间轴同高
-            )
-            self.marks_container.setStyleSheet("background: transparent;")
-            
-            # 计算标记位置（基于时间轴宽度）
-            position = (mark['frame'] / self.timeline.maximum()) * timeline_width
-            
-            # 创建标记
-            label = QLabel("▼", self.marks_container)
+            # 创建标记标签（三角形）
+            label = QLabel("▲", self.marks_frame)
             label.setStyleSheet(MARK_LABEL_STYLE)
-            label.move(
-                int(position - 6),  # 调整标记位置使其与滑块对齐
-                5  # 紧贴时间轴下方
-            )
+            label.setFixedSize(10, 10)  # 设置固定大小
+            
+            # 设置标记位置，确保在容器内部
+            x_pos = int(position - label.width()/2)
+            y_pos = int((self.marks_frame.height() - label.height())/2)
+            
+            # 限制x坐标范围
+            x_pos = max(timeline_margins, min(x_pos, self.marks_frame.width() - timeline_margins - label.width()))
+            
+            label.move(x_pos, y_pos)
             label.show()
             self.mark_labels.append(label)
+            
+        self.update_mark_times()
 
     def setup_mark_list_context_menu(self):
         self.mark_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -857,6 +871,49 @@ class VideoPlayerWindow(QMainWindow):
             self.showNormal()
             self.fullscreen_btn.setText("全屏")
         super().keyPressEvent(event)
+
+    def update_mark_times(self):
+        """更新标记时间显示"""
+        if self.cap is None or not self.marks:
+            return
+            
+        current_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+        current_mark = None
+        next_mark = None
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        
+        # 查找当前标记和下一个标记
+        for i, mark in enumerate(self.marks):
+            if mark['frame'] <= current_frame:
+                current_mark = mark
+                if i < len(self.marks) - 1:
+                    next_mark = self.marks[i + 1]
+            else:
+                if next_mark is None:
+                    next_mark = mark
+                break
+        
+        # 更新显示
+        if current_mark:
+            self.current_mark_time.setText(self.frame_to_time(current_mark['frame']))
+        else:
+            self.current_mark_time.setText("--:--:--")
+            
+        if next_mark:
+            self.next_mark_time.setText(self.frame_to_time(next_mark['frame']))
+            if current_mark and fps > 0:
+                # 计算两个标记之间的时长（精确到毫秒）
+                duration_frames = next_mark['frame'] - current_mark['frame']
+                duration_seconds = duration_frames / fps
+                minutes = int(duration_seconds // 60)
+                seconds = int(duration_seconds % 60)
+                milliseconds = int((duration_seconds % 1) * 1000)
+                self.duration_label.setText(f"{minutes:02}:{seconds:02}.{milliseconds:03}")
+            else:
+                self.duration_label.setText("00:00.000")
+        else:
+            self.next_mark_time.setText("--:--:--")
+            self.duration_label.setText("00:00.000")
 
 if __name__ == "__main__":
     import sys

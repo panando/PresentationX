@@ -2,7 +2,11 @@
 TIMELINE_STYLE = """
     QSlider {
         min-height: 12px;
-        margin: 2px 8px;
+        margin: 2px 0px;  # 移除左右边距
+        padding: 4px 8px;  # 改用内边距控制间距
+        border: 1px solid #AAAAAA;
+        border-radius: 5px;
+        background: transparent;
     }
     QSlider::groove:horizontal {
         height: 4px;
@@ -36,10 +40,22 @@ VOLUME_SLIDER_STYLE = """
 """
 
 # 时间显示样式
-TIME_LABEL_STYLE = "font-size: 11px; color: #666;"
+TIME_LABEL_STYLE = """
+    font-size: 11px;
+    color: #666;
+    padding: 0 4px;
+    min-width: 60px;
+    text-align: center;
+"""
 
-# 标记容器样式
-MARKS_CONTAINER_STYLE = "background: transparent;"
-
-# 标记样式
-MARK_LABEL_STYLE = "color: #FF4081; font-size: 10px;"
+# 修改标记样式，调整大小和边距
+MARK_LABEL_STYLE = """
+    QLabel {
+        color: #FF4081;
+        font-size: 8px;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        border: none;
+    }
+"""
