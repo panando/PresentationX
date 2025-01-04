@@ -1,9 +1,9 @@
-# 时间轴基础样式
+# 时间轴基础样式 - 修复CSS注释语法
 TIMELINE_STYLE = """
     QSlider {
         min-height: 12px;
-        margin: 2px 0px;  # 移除左右边距
-        padding: 4px 8px;  # 改用内边距控制间距
+        margin: 2px 0px;        /* 移除左右边距 */
+        padding: 4px 8px;       /* 改用内边距控制间距 */
         border: 1px solid #AAAAAA;
         border-radius: 5px;
         background: transparent;

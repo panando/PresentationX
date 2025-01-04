@@ -128,12 +128,20 @@ class VideoPlayerWindow(QMainWindow):
         marks_layout = QHBoxLayout(marks_container)
         marks_layout.setContentsMargins(0, 0, 0, 0)
         
+        # 设置标记容器的布局间距与时间轴一致
+        marks_layout.setSpacing(5)  # 与time_display的间距一致
+        
         # 当前标记时间
         self.current_mark_time = QLabel("--:--:--")
         self.current_mark_time.setStyleSheet(TIME_LABEL_STYLE)
         marks_layout.addWidget(self.current_mark_time)
         
         # 标记容器
+        marks_frame_container = QWidget()
+        marks_frame_layout = QHBoxLayout(marks_frame_container)
+        marks_frame_layout.setContentsMargins(0, 0, 0, 0)  # 移除内边距
+        marks_frame_layout.setSpacing(0)  # 移除间距
+        
         self.marks_frame = QFrame()
         self.marks_frame.setStyleSheet("""
             QFrame { 
@@ -141,11 +149,13 @@ class VideoPlayerWindow(QMainWindow):
                 background: transparent;
                 border-radius: 5px;
                 margin: 2px 0px;
-                padding: 2px 8px;  /* 添加内边距以匹配时间轴 */
             }
         """)
-        self.marks_frame.setFixedHeight(20)  # 减小高度
-        marks_layout.addWidget(self.marks_frame, stretch=1)
+        self.marks_frame.setFixedHeight(20)
+        marks_frame_layout.addWidget(self.marks_frame)
+        
+        # 使用与时间轴相同的stretch比例
+        marks_layout.addWidget(marks_frame_container, stretch=1)
         
         # 下一标记时间和时长
         next_mark_info = QWidget()
@@ -273,12 +283,20 @@ class VideoPlayerWindow(QMainWindow):
         """防抖动的延迟跳转"""
         if self.cap is None:
             return
-        target_frame = self.timeline.value()
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-        # 同步音频位置
-        fps = self.cap.get(cv2.CAP_PROP_FPS)
-        if (fps > 0):
-            self.media_player.setPosition(int(target_frame / fps * 1000))
+        
+        try:
+            target_frame = self.timeline.value()
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+            
+            # 确保音频同步
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0:
+                position = int((target_frame / fps) * 1000)
+                # 添加缓冲时间
+                self.media_player.setPosition(max(0, position - 50))
+                
+        except Exception as e:
+            print(f"跳转操作出错: {str(e)}")
         
     def set_volume(self, value):
         """设置音量"""
@@ -290,10 +308,13 @@ class VideoPlayerWindow(QMainWindow):
             if file_name:
                 self.video_path = file_name
                 self.cap = cv2.VideoCapture(file_name)
-                # 设置媒体播放器
+                
+                # 设置媒体播放器并预加载
                 self.media_player.setSource(QUrl.fromLocalFile(file_name))
-                self.media_player.play()
-                self.media_player.pause()  # 先暂停，等待用户点击播放
+                # 等待媒体加载完成
+                while self.media_player.mediaStatus() != QMediaPlayer.MediaStatus.LoadedMedia:
+                    QApplication.processEvents()
+                self.media_player.pause()
                 
                 total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.timeline.setMaximum(total_frames)
@@ -626,6 +647,14 @@ class VideoPlayerWindow(QMainWindow):
     def resizeEvent(self, event):
         """窗口大小改变时重新调整视频显示和标记容器位置"""
         super().resizeEvent(event)
+        
+        # 更新marks_frame_container的宽度以匹配timeline
+        for widget in self.findChildren(QWidget):
+            if isinstance(widget, QWidget) and widget.layout() and widget.layout().count() > 0:
+                if self.marks_frame in [widget.layout().itemAt(i).widget() for i in range(widget.layout().count())]:
+                    widget.setFixedWidth(self.timeline.width())
+                    break
+        
         if self.current_frame_cache is not None:
             self.display_frame(self.current_frame_cache)
         # 窗口大小改变时重新绘制标记
@@ -639,26 +668,26 @@ class VideoPlayerWindow(QMainWindow):
                 label.deleteLater()
         self.mark_labels = []
         
-        # 调整标记位置计算，考虑容器边距
-        timeline_margins = 8  # 与时间轴的左右边距相同
-        container_width = self.marks_frame.width() - (timeline_margins * 2)
+        # 获取时间轴的实际可用宽度
+        timeline_width = self.timeline.width()
+        marks_frame_width = self.marks_frame.width()
         
         # 在标记容器中添加标记
         for mark in self.marks:
-            # 计算标记位置，加上左边距补偿
-            position = (mark['frame'] / self.timeline.maximum()) * container_width + timeline_margins
+            # 计算标记位置，使用与时间轴相同的比例
+            position = (mark['frame'] / self.timeline.maximum()) * marks_frame_width
             
             # 创建标记标签（三角形）
             label = QLabel("▲", self.marks_frame)
             label.setStyleSheet(MARK_LABEL_STYLE)
-            label.setFixedSize(10, 10)  # 设置固定大小
+            label.setFixedSize(10, 10)
             
             # 设置标记位置，确保在容器内部
             x_pos = int(position - label.width()/2)
             y_pos = int((self.marks_frame.height() - label.height())/2)
             
             # 限制x坐标范围
-            x_pos = max(timeline_margins, min(x_pos, self.marks_frame.width() - timeline_margins - label.width()))
+            x_pos = max(0, min(x_pos, marks_frame_width - label.width()))
             
             label.move(x_pos, y_pos)
             label.show()
