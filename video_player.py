@@ -134,7 +134,7 @@ class VideoPlayerWindow(QMainWindow):
         marks_display.setSpacing(5)
 
         # 标记时间标签
-        self.current_mark_time = QLabel("--:--:--")
+        self.current_mark_time = QLabel("--:--.---")
         self.current_mark_time.setStyleSheet(TIME_LABEL_STYLE)
         self.current_mark_time.setFixedWidth(LEFT_TIME_WIDTH)  # 恢复原始宽度
 
@@ -157,7 +157,7 @@ class VideoPlayerWindow(QMainWindow):
         marks_frame_layout.addWidget(self.marks_frame)
 
         # 下一个标记时间和持续时间
-        self.next_mark_time = QLabel("--:--:--")
+        self.next_mark_time = QLabel("--:--.---")
         self.next_mark_time.setStyleSheet(TIME_LABEL_STYLE)
         self.next_mark_time.setFixedWidth(RIGHT_TIME_WIDTH)
 
@@ -527,6 +527,22 @@ class VideoPlayerWindow(QMainWindow):
         seconds = total_seconds % 60
         return f"{hours:02}:{minutes:02}:{seconds:02}"
 
+    def frame_to_mark_time(self, frame):
+        """转换帧到标记时间字符串（mm:ss.xxx格式）"""
+        if self.cap is None:
+            return "--:--.---"
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            return "--:--.---"
+            
+        # 计算时间
+        total_seconds = frame / fps
+        total_minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        milliseconds = int((total_seconds % 1) * 1000)
+        
+        return f"{total_minutes:02}:{seconds:02}.{milliseconds:03}"
+
     def update_time_display(self):
         """更新当前时间和总时间显示"""
         if self.cap is None:
@@ -543,14 +559,15 @@ class VideoPlayerWindow(QMainWindow):
             self.total_time_label.setText(self.frame_to_time(total_frames))
 
     def update_mark_list(self):
+        """更新标记列表"""
         self.mark_list.clear()
         for mark in self.marks:
-            time_str = self.frame_to_time(mark['frame'])
+            time_str = self.frame_to_mark_time(mark['frame'])
             display_text = f"{time_str}"
-            if mark['note']:  # 如果有注释则显示
+            if mark['note']:
                 display_text += f" - {mark['note']}"
             self.mark_list.addItem(display_text)
-            
+
     def edit_mark(self, item):
         # 双击跳转到标记处并暂停
         index = self.mark_list.row(item)
@@ -702,7 +719,7 @@ class VideoPlayerWindow(QMainWindow):
         if 0 <= index < len(self.marks):
             # 获取要删除的标记信息
             mark = self.marks[index]
-            time_str = self.frame_to_time(mark['frame'])
+            time_str = self.frame_to_mark_time(mark['frame'])
             note = mark['note'] if mark['note'] else "无注释"
             
             # 弹出确认对话框
@@ -759,7 +776,7 @@ class VideoPlayerWindow(QMainWindow):
             try:
                 with open(file_name, 'w', encoding='utf-8') as f:
                     for mark in self.marks:
-                        time_str = self.frame_to_time(mark['frame'])
+                        time_str = self.frame_to_mark_time(mark['frame'])
                         f.write(f"{time_str} {mark['note']}\n")
                 QMessageBox.information(self, "成功", "标记已成功导出")
             except Exception as e:
@@ -920,24 +937,24 @@ class VideoPlayerWindow(QMainWindow):
         
         # 更新显示
         if current_mark:
-            self.current_mark_time.setText(self.frame_to_time(current_mark['frame']))
+            self.current_mark_time.setText(self.frame_to_mark_time(current_mark['frame']))
         else:
-            self.current_mark_time.setText("--:--:--")
+            self.current_mark_time.setText("--:--.---")
             
         if next_mark:
-            self.next_mark_time.setText(self.frame_to_time(next_mark['frame']))
+            self.next_mark_time.setText(self.frame_to_mark_time(next_mark['frame']))
             if current_mark and fps > 0:
-                # 计算两个标记之间的时长（精确到毫秒）
+                # 计算两个标记之间的时长
                 duration_frames = next_mark['frame'] - current_mark['frame']
                 duration_seconds = duration_frames / fps
-                minutes = int(duration_seconds // 60)
+                total_minutes = int(duration_seconds // 60)
                 seconds = int(duration_seconds % 60)
                 milliseconds = int((duration_seconds % 1) * 1000)
-                self.duration_label.setText(f"{minutes:02}:{seconds:02}.{milliseconds:03}")
+                self.duration_label.setText(f"{total_minutes:02}:{seconds:02}.{milliseconds:03}")
             else:
                 self.duration_label.setText("00:00.000")
         else:
-            self.next_mark_time.setText("--:--:--")
+            self.next_mark_time.setText("--:--.---")
             self.duration_label.setText("00:00.000")
 
 if __name__ == "__main__":
