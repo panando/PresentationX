@@ -3,6 +3,9 @@ import json
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
                             QInputDialog, QSlider, QMenu, QSplitter, QMessageBox)
+from styles import (TIMELINE_STYLE, VOLUME_SLIDER_STYLE, 
+                   TIME_LABEL_STYLE, MARKS_CONTAINER_STYLE,
+                   MARK_LABEL_STYLE)
 from PyQt6.QtGui import QShortcut
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime, QUrl
 from PyQt6.QtGui import QImage, QPixmap, QKeySequence
@@ -92,7 +95,7 @@ class VideoPlayerWindow(QMainWindow):
         
         # 当前时间
         self.current_time_label = QLabel("00:00:00")
-        self.current_time_label.setStyleSheet("font-size: 11px; color: #666;")
+        self.current_time_label.setStyleSheet(TIME_LABEL_STYLE)
         time_display.addWidget(self.current_time_label)
         
         # 时间轴
@@ -101,30 +104,12 @@ class VideoPlayerWindow(QMainWindow):
         self.timeline.sliderReleased.connect(self.on_timeline_released)
         self.timeline.sliderMoved.connect(self.on_timeline_change)
         # 基础样式
-        self.timeline.setStyleSheet("""
-            QSlider {
-                min-height: 12px;
-                margin: 2px 8px;
-            }
-            QSlider::groove:horizontal {
-                height: 4px;
-                background: #E0E0E0;
-                margin: 0px;
-                border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
-                background: #9E9E9E;
-                width: 12px;
-                height: 12px;
-                margin: -4px 0;
-                border-radius: 6px;
-            }
-        """)
+        self.timeline.setStyleSheet(TIMELINE_STYLE)
         time_display.addWidget(self.timeline, stretch=1)
         
         # 总时间
         self.total_time_label = QLabel("00:00:00")
-        self.total_time_label.setStyleSheet("font-size: 11px; color: #666;")
+        self.total_time_label.setStyleSheet(TIME_LABEL_STYLE)
         time_display.addWidget(self.total_time_label)
         
         # 添加音量控制
@@ -132,20 +117,7 @@ class VideoPlayerWindow(QMainWindow):
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(50)
         self.volume_slider.setFixedWidth(80)
-        self.volume_slider.setStyleSheet("""
-            QSlider::handle:horizontal {
-                background: #4CAF50;
-                width: 12px;
-                margin: -3px 0;
-                border-radius: 6px;
-            }
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #E0E0E0;
-                margin: 0px;
-                border-radius: 3px;
-            }
-        """)
+        self.volume_slider.setStyleSheet(VOLUME_SLIDER_STYLE)
         self.volume_slider.valueChanged.connect(self.set_volume)
         time_display.addWidget(self.volume_slider)
         
@@ -153,7 +125,7 @@ class VideoPlayerWindow(QMainWindow):
         
         # 标记容器
         self.marks_container = QWidget()
-        self.marks_container.setStyleSheet("background: transparent;")
+        self.marks_container.setStyleSheet(MARKS_CONTAINER_STYLE)
         timeline_layout.addWidget(self.marks_container)
         
         left_layout.addWidget(timeline_container, stretch=1)  # 时间轴区域占较小空间
@@ -672,7 +644,7 @@ class VideoPlayerWindow(QMainWindow):
             
             # 创建标记
             label = QLabel("▼", self.marks_container)
-            label.setStyleSheet("color: #FF4081; font-size: 10px;")
+            label.setStyleSheet(MARK_LABEL_STYLE)
             label.move(
                 int(position - 6),  # 调整标记位置使其与滑块对齐
                 5  # 紧贴时间轴下方
