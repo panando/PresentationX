@@ -4,8 +4,8 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QFileDialog, QLabel, QListWidget,
                             QInputDialog, QSlider, QMenu, QSplitter, QMessageBox, 
                             QFrame, QApplication)  # 添加 QApplication
-from styles import (TIMELINE_STYLE, VOLUME_SLIDER_STYLE, 
-                   TIME_LABEL_STYLE, MARK_LABEL_STYLE)
+from styles import (TIMELINE_STYLE, VOLUME_SLIDER_STYLE,
+                   TIME_LABEL_STYLE, MARK_LABEL_STYLE, VIDEO_DISPLAY_STYLE)
 from PyQt6.QtGui import QShortcut
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QDateTime, QUrl
 from PyQt6.QtGui import QImage, QPixmap, QKeySequence
@@ -81,6 +81,7 @@ class VideoPlayerWindow(QMainWindow):
         # 视频显示区
         self.video_label = QLabel()
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet(VIDEO_DISPLAY_STYLE)
         left_layout.addWidget(self.video_label, stretch=8)  # 视频区域占主要空间
         
         # 时间轴和标记区域容器

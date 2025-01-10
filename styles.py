@@ -59,3 +59,15 @@ MARK_LABEL_STYLE = """
         border: none;
     }
 """
+
+# 视频显示区域样式
+VIDEO_DISPLAY_STYLE = """
+    QLabel {
+        background-color: #000000;
+        border: 2px solid #E0E0E0;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 10px;
+        box-shadow: 0px 0px 10px rgba(76, 175, 80, 0.5);
+    }
+"""
