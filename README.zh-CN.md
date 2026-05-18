@@ -1,0 +1,157 @@
+# PresentationX - 视频标记播放器
+
+> English documentation: [README.md](README.md)
+
+一款基于 PyQt6 和 OpenCV 的桌面视频标记播放工具，支持在视频时间轴上添加、编辑、导入/导出标记点，适合视频内容分析、演讲练习、素材审阅等场景。
+
+## 功能特性
+
+- **视频播放控制** — 加载本地视频文件，支持播放、暂停、停止，带进度条拖拽跳转
+- **时间轴标记** — 在任意时间点添加标记，标记以三角形图标直观显示在时间轴下方
+- **标记管理** — 支持标记注释编辑、时间戳修改、批量删除、全选/反选
+- **标记间导航** — 快速跳转到上一个/下一个标记，到达标记时自动暂停
+- **导入/导出标记** — 标记可导出为 `.txt` 文件，支持手动编辑后重新导入，便于精确控制播放流程
+- **全屏播放** — 支持全屏模式（无边框），适合演示场景
+- **音频同步** — 视频与音频同步播放，音量可调节
+- **丰富的快捷键** — 常用操作均可通过键盘完成，提升操作效率
+
+## 界面预览
+
+主界面分为左右两栏：
+
+```
+┌──────────────────────────────┬──────────────┐
+│                              │  标记列表     │
+│       视频显示区域            │  ├ 00:00.000  │
+│                              │  ├ 00:05.320  │
+│                              │  ├ ...        │
+├──────────────────────────────┤              │
+│ 00:00:00 ──●── 00:10:00 🔊 │  [导出] [导入] │
+│ 00:00.000 ▲▲▲ 00:05.320 ... │              │
+├──────────────────────────────┤              │
+│ [加载] [播放] [标记] [停止] [全屏]│              │
+└──────────────────────────────┴──────────────┘
+```
+
+## 环境依赖
+
+- **Python** 3.9+
+- **操作系统**：Windows / macOS / Linux
+
+### Python 包依赖
+
+| 包名 | 用途 |
+|------|------|
+| `PyQt6` | GUI 界面框架 |
+| `opencv-python` | 视频解码与帧处理 |
+
+> PyQt6 自带了 `QtMultimedia` 模块用于音频播放，无需额外安装。
+
+## 安装与运行
+
+### 1. 克隆仓库
+
+```bash
+git clone https://github.com/your-username/PresentationX.git
+cd PresentationX
+```
+
+### 2. 创建虚拟环境（推荐）
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Linux/macOS
+# 或
+venv\Scripts\activate      # Windows
+```
+
+### 3. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. 运行
+
+```bash
+python video_player.py
+```
+
+## 使用说明
+
+### 基本操作
+
+| 操作 | 说明 |
+|------|------|
+| 加载视频 | 点击「加载视频」按钮，选择本地视频文件 |
+| 播放/暂停 | 点击「播放」按钮，或按 **空格键** |
+| 添加标记 | 播放过程中点击「添加标记」或按 **M 键**，在当前帧位置添加标记 |
+| 停止 | 点击「停止」按钮，回到视频起始位置 |
+| 全屏 | 点击「全屏」按钮，或按 **F 键 / F11 / ` 键** |
+
+### 标记操作
+
+| 操作 | 方式 |
+|------|------|
+| 跳转到标记 | 双击标记列表中的标记项 |
+| 编辑注释 | 右键标记 →「编辑注释」 |
+| 编辑时间戳 | 右键标记 →「编辑时间」（格式：`MM:SS.xxx`） |
+| 删除标记 | 选中标记后按 **Delete** 或 **Backspace**，或右键 →「删除选中」 |
+| 全选/反选 | 右键 →「选择」→「全选」/「反选」；或按 **Ctrl+A** 全选 |
+
+### 导航快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| **→ / ↓** | 跳转到下一个标记并播放 |
+| **← / ↑** | 跳转到上上个标记并播放 |
+| **Enter / R / Shift** | 跳转到上一个标记并播放 |
+| **空格** | 播放/暂停 |
+| **M** | 在当前帧添加标记 |
+| **Delete / Backspace** | 删除选中的标记 |
+| **F / F11 / \`** | 切换全屏 |
+| **Esc** | 退出全屏 |
+
+### 标记文件格式
+
+导出的 `.txt` 文件格式为每行一个标记：
+
+```
+00:00.000 开始
+00:05.320 第一段讲解
+01:23.450 重点回顾
+```
+
+- 时间格式：`MM:SS.mmm`（分:秒.毫秒）
+- 时间与注释之间以空格分隔
+- 可手动编辑后重新导入，实现对视频播放流程的精确编排
+
+## 项目结构
+
+```
+PresentationX/
+├── video_player.py      # 主程序（界面、视频播放、标记逻辑）
+├── styles.py            # UI 样式定义（CSS/QSS）
+├── requirements.txt     # Python 依赖
+├── README.md            # 英文文档
+└── README.zh-CN.md      # 中文文档
+```
+
+## 适用场景
+
+- **演讲/汇报练习**：标记每个环节的时间点，精确控制排练节奏
+- **视频素材审阅**：在关键帧处打点标记，方便反复查看
+- **教学内容分析**：对教学视频进行分段标记和注释
+- **影视剪辑参考**：记录需要剪辑的时间节点
+
+## 许可证
+
+MIT License
+
+Copyright (c) 2025
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
